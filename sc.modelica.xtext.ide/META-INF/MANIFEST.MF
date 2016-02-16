@@ -1,0 +1,14 @@
+Manifest-Version: 1.0
+Bundle-ManifestVersion: 2
+Bundle-Name: sc.modelica.xtext.ide
+Bundle-Vendor: Stefano Cottafavi
+Bundle-Version: 1.0.0.qualifier
+Bundle-SymbolicName: sc.modelica.xtext.ide;singleton:=true
+Bundle-ActivationPolicy: lazy
+Require-Bundle: sc.modelica.xtext,
+ org.eclipse.xtext.ide,
+ org.eclipse.xtext.xbase.ide
+Bundle-RequiredExecutionEnvironment: JavaSE-1.8
+Export-Package: sc.modelica.xtext.ide.contentassist.antlr.internal,
+ sc.modelica.xtext.ide.contentassist.antlr
+

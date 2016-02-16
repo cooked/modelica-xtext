@@ -1,0 +1,549 @@
+grammar sc.modelica.xtext.ModelicaMo hidden(S_ESCAPE, ML_COMMENT, SL_COMMENT) //with org.eclipse.xtext.common.Terminals
+
+import "http://www.eclipse.org/emf/2002/Ecore" as ecore
+
+generate modelicaMo "http://www.modelica.sc/xtext/ModelicaMo"
+
+Program:
+	{Program} ('within' name=Name? ';')?
+	( classes+=ClassDefinition ';')*
+;
+	
+// B.2.2 Class Definition
+ClassDefinition:
+	encapsulated?='encapsulated'? classPrefixes=ClassPrefixes classSpecifier=ClassSpecifier
+;
+ClassPrefixes:
+	partial?='partial'? 
+	( class?='class' | model?='model' | operator?='operator'? record?='record' | block?='block' | 
+		expandable?='expandable'? connector?='connector' | type?='type' | package?='package' |
+		(pure?='pure'|'impure')? operator?='operator'? function?='function' | operator?='operator' )
+;
+ClassSpecifier:
+	LongClassSpecifier | ShortClassSpecifier | DerClassSpecifier
+;
+// TODO different from modelica manual: made stringcomment optional 
+LongClassSpecifier:
+	name=IDENT sringComment=StringComment? composition=Composition 'end' nameEnd=IDENT |
+	extends=ExtendClause name=IDENT classModification=ClassModification? sringComment=StringComment? composition=Composition 'end' nameEnd=IDENT
+;
+ShortClassSpecifier:
+	name=IDENT '=' basePrefix=BasePrefix instanceName=Name arraySubscripts=ArraySubscripts? 
+		classModification=ClassModification? comment=Comment? |
+	name=IDENT '=' 'enumeration' '(' (enumList=EnumList? | ':') ')' comment=Comment?
+;
+DerClassSpecifier:
+	id=IDENT '=' 'der' '(' name=Name ',' IDENT (',' IDENT)* ')' comment=Comment? 
+;
+
+BasePrefix:
+	TypePrefix
+;
+
+EnumList:
+	enumerationLiteral+=EnumerationLiteral (',' enumerationLiteral+=EnumerationLiteral)*
+;
+EnumerationLiteral:
+	IDENT comment=Comment
+;
+Composition:
+	elementList=ElementList
+	('public' elementListPublic+=ElementList 
+		| 'protected' elementListProtected+=ElementList 
+		| equationSections+=EquationSection 
+		| algorithmSections+=AlgorithmSection )*
+		('external' LanguageSpecification=LanguageSpecification)?
+		(annotation=Annotation ';')?
+;
+
+LanguageSpecification:
+	STRING
+;
+ElementList:
+	{ElementList} (elements+=Element ';')*
+;
+Element:
+	importClause=ImportClause | extendClause=ExtendClause |
+	redeclare?='redeclare'? final?='final'? inner?='inner'? outer?='outer'?
+	 //(class=ClassDefinition | comp=ComponentClause) | 
+		'replaceable'? (class=ClassDefinition | comp=ComponentClause) (cc=ConstrainingClause comment=Comment?)? 
+;
+ImportClause:
+	'import' (id=IDENT '=' name=Name | name=Name ('.' ('*' | '{' importList=ImportList '}'))?) comment=Comment?
+;
+ImportList:
+	id+=IDENT (',' id+=IDENT)*
+;
+
+// B.2.3 Extends
+ExtendClause:
+	'extends' name=Name classModification=ClassModification? annotation=Annotation?
+;
+ConstrainingClause:
+	'constrainedby' name=Name classModification=ClassModification?
+;
+
+
+Modification:
+	classModification=ClassModification ('=' expression=Expression)? 
+	| '=' expression=Expression
+	|':=' expression=Expression
+;
+ClassModification:
+	{ClassModification} '(' argumentList=ArgumentList? ')'
+;
+ArgumentList:
+	arguments+=Argument (',' arguments+=Argument)*
+;
+Argument:
+	ElementModificationOrReplaceable | ElementRedeclaration
+;
+ElementModificationOrReplaceable:
+	each?='each'? final?='final'? (elementModOrRep=ElementModification | elementModOrRep=ElementReplaceable)
+;
+ElementModification:
+	name=Name modification=Modification? stringComment=StringComment?
+;
+ElementRedeclaration:
+	redeclare?='redeclare' each?='each'? final?='final'?
+	((classDefinition=ShortClassDefinition | componentClause=ComponentClause1) | element=ElementReplaceable)
+;
+ElementReplaceable:
+	replaceable?='replaceable' (element=ShortClassDefinition | element=ComponentClause1) constraint=ConstrainingClause?
+;
+ComponentClause1:
+	typePrefix=TypePrefix typeSpecifier=TypeSpecifier componentDeclaration=ComponentDeclaration1
+;
+ComponentDeclaration1:
+	Declaration comment=Comment?
+;
+ShortClassDefinition:
+	classPrefixes=ClassPrefixes classSpecifier=ShortClassSpecifier	
+;
+
+ComponentClause:
+	typePrefix=TypePrefix typeSpec=TypeSpecifier arraySubscripts=ArraySubscripts? componentList=ComponentList
+;
+TypePrefix:
+	{TypePrefix} (flow?='flow' | stream?='stream')?
+	(constant?='constant' | parameter?='parameter' | discrete?='discrete')?
+	(input?='input' | output?='output')?
+;
+TypeSpecifier:
+	name=Name
+;
+ComponentList:
+	components+=ComponentDeclaration ("," components+=ComponentDeclaration)*
+;
+// TODO modified comment with respect to the modelica manual
+ComponentDeclaration:
+	declaration=Declaration conditionAttribute=ConditionAttribute? comment=StringComment? annotation=Annotation?
+;
+ConditionAttribute:
+	'if' condition=Expression
+;
+// TODO modified with respect to the modelica manual: modification is now optional
+Declaration:
+	name=IDENT arraySubscripts=ArraySubscripts? modification=Modification?
+;
+
+
+
+
+// B.2.6 Equations
+
+EquationSection:
+	initial?='initial'? equation='equation' (equations+=Equation ';')*
+;
+AlgorithmSection:
+	initial?='initial'? algorithm='algorithm' (statements+=Statement ';')*
+;
+// TODO modified with respect to the modelica manual: connection closed moved outside
+// also functioncall args removed here as it appears below in Primary (the highest priority element of an equation)
+Equation:
+	(SimpleExpression ('=' equation=Expression)? 
+	| EquationIf 
+	| EquationFor 
+	| EquationWhen  
+	/*| name=Name fca=FunctionCallArgs*/ ) comm=Comment?
+	| connection=ConnectClause 
+	| Assert
+;
+Statement:
+	( component=ComponentReference ( ':=' expression=Expression | fca=FunctionCallArgs )
+	| '(' expression=OutputExpressionList ')' ':=' component=ComponentReference fca=FunctionCallArgs
+	| {Statement} 'return' | {Statement} 'break'
+	| StatementIf | StatementFor | StatementWhile | StatementWhen ) comm=Comment
+;
+
+EquationIf:
+	'if' ifExp=Expression 'then' (ifEqs+=Equation ';')* 
+	('elseif' elseifExp+=Expression 'then' (elseIfEqs+=Equation ';')*)*
+	('else' (elseEqs+=Equation ';')*)?
+	'end' 'if'
+;
+StatementIf:
+	'if' ifExp=Expression 'then' (ifEqs+=Statement ';')* 
+	('elseif' elseifExp+=Expression 'then' (elseIfEqs+=Statement ';')*)*
+	('else' (elseEqs+=Statement ';')*)?
+	'end' 'if'
+;
+
+EquationFor:
+	'for' iterators=ForIndices 'loop' (forEqs+=Equation ';')* 'end' 'for' 
+;
+StatementFor:
+	'for' iterators=ForIndices 'loop' (forEqs+=Statement ';')* 'end' 'for' 
+;
+
+ForIndices:
+	forIndex+=ForIndex (',' forIndex+=ForIndex)*
+;
+ForIndex:
+	id=IDENT 'in' expression=Expression
+;
+
+StatementWhile:
+	'while' boolExpr=Expression 'loop' (stat+=Statement ";")* 'end' 'while'
+;
+
+EquationWhen:
+	'when' whenExp=Expression 'then' (whenEquations+=Equation ';')* 
+	('elsewhen' exp+=Expression 'then' (equationItem+=Equation ';')* )* 
+	'end' 'when'
+;
+StatementWhen:
+	'when' whenExp=Expression 'then' (whenEquations+=Statement ';')* 
+	('elsewhen' exp+=Expression 'then' (equationItem+=Statement ';')* )* 
+	'end' 'when'
+;
+
+// TODO modified with respect to the modelica manual: connectionclause can have annotation
+ConnectClause:
+	'connect' '(' node1=ComponentReference ',' node2=ComponentReference ')' annotation=Annotation?
+;
+
+
+// B.2.7 Expressions
+Expression:
+	 SimpleExpression |
+	 'if' if=Expression 'then' then=Expression 
+	 ('elseif' elseif+=Expression 'then' elseifthen+=Expression)*
+	 'else' else=Expression
+;
+
+SimpleExpression returns Expression:
+	start=LogicalExpression  (':' step=LogicalExpression (':' stop=LogicalExpression)? )?
+;
+
+LogicalExpression returns Expression:
+	LogicalTerm ({LogicalExpression.left=current} 'or' right+=LogicalTerm)*
+;
+LogicalTerm returns Expression:
+	LogicalFactor ({LogicalTerm.left=current} 'and' right=LogicalFactor)*
+;
+LogicalFactor returns Expression:
+	'not'? Relation
+;
+Relation returns Expression:
+	ArithmeticExpression ({Relation.left=current} RelOp  right=ArithmeticExpression)?
+;
+RelOp: 
+	'>'|'>='|'<'|'<='|'=='|'<>'
+;
+
+// TODO modified the original rule below to add support for unary arithmetics 
+
+//ArithmeticExpression returns Expression:
+//	Term ({ArithmeticExpression.left=current} AddOp right=Term)?
+//;
+ArithmeticExpression returns Expression:
+	ArithmeticExpressionUnary ({ArithmeticExpression.left=current} AddOp right=ArithmeticExpression2)?
+;
+
+ArithmeticExpression2 returns Expression:
+	Term 
+	({ArithmeticExpression2.left=current} AddOp right=ArithmeticExpression2)?
+;
+
+ArithmeticExpressionUnary returns Expression:
+	Term | AddOp exp=Term
+;
+	
+	
+
+AddOp: 
+	'+'|'-'|'.+'|'.-'
+;
+Term returns Expression:
+	Factor ({Term.left=current} MulOp right=Factor)?
+;
+MulOp: 
+	'*'|'/'|'.*'|'./'
+;
+Factor returns Expression:
+	Primary  ({Factor.left=current} ('^'|'.^') right=Primary)?
+;
+Primary returns Expression:
+	{Primary} UNSIGNED_INTEGER | {Primary} UNSIGNED_NUMBER | {Primary} STRING | {Primary} 'false' | {Primary} 'true' 
+	| {Primary} (name=Name | 'der' | 'initial') fca=FunctionCallArgs
+	| ComponentReference
+	| '(' OutputExpressionList ')'
+	| '[' list+=ExprExpressionList (';' list+=ExprExpressionList )* ']'
+	| '{' fa=FunctionArguments '}'
+	| {Primary} 'end'
+;
+
+Name: 
+	{Name}'.'? IDENT ('.' id+=IDENT)*
+;
+ComponentReference:	
+ 	{ComponentReference} '.'? IDENT subs+=ArraySubscripts? ('.' id+=IDENT subs+=ArraySubscripts?)*
+;
+
+
+FunctionCallArgs:
+	{FunctionCallArgs} '(' functionArgs=FunctionArguments? ')'
+;	
+FunctionArguments:
+	functionArgument=FunctionArgument (',' args+=FunctionArguments | 'for' forIndices+=ForIndices )? 
+	| namedArguments=NamedArguments
+;
+NamedArguments:
+	namedArgument+=NamedArgument (',' namedArguments=NamedArguments)?
+;
+NamedArgument:
+	name=IDENT '=' functionArgument=FunctionArgument
+;
+FunctionArgument:
+	'function' name=Name '(' namedArguments=NamedArguments? ')' | expression=Expression
+;
+OutputExpressionList:
+	{OutputExpresionList} expressions+=Expression? (',' expressions+=Expression? )* 
+;
+ExprExpressionList:
+	exp+=Expression (',' exp+=Expression)*
+;	
+ArraySubscripts:
+	'[' subscripts+=Subscript (',' subscripts+=Subscript)* ']'
+;	
+Subscript :
+	{Subscript} ':' | Expression
+;	 
+
+
+Comment:
+	stringComment=StringComment annotation=Annotation? 
+;
+
+StringComment:
+	{StringComment} STRING ('+' str+=STRING)*
+;
+
+Assert:
+	'assert' '(' condition=Expression ',' message=Expression (',' ('level' '=')? level=AssertionLevel)? ')'
+;
+enum AssertionLevel:
+	error='AssertionLevel.error' | warning='AssertionLevel.warning'
+;
+
+
+// ANNOTATIONS
+
+// TODO modified with respect to the modelica manual: modification is now optional
+//Annotation: 'annotation' ClassModification ;
+Annotation:
+	'annotation' '(' args+=AnnotationArg (',' args+=AnnotationArg)* ')'
+;
+//AnnotationGraphical
+AnnotationArg:
+	AnnotationCode | Placement | Line | AnnotationLayer | AnnotationDocumentation | Dialog 
+	| AnnotationExperiment | Choices | DefComponentName
+;
+DefComponentName:
+	'defaultComponentName' '=' value=STRING
+;
+Choices:
+	'choices''(' types+=IDENT '=' values+=('true'|'false') (',' types+=IDENT '=' values+=('true'|'false'))* ')'
+;
+AnnotationCode:
+	flag=CodeGenerationFlag "=" value=('true'|'false')
+;
+CodeGenerationFlag:
+	"Evaluate" | "HideResult" | "Inline" | "LateInline" | "GenerateEvents"
+;
+AnnotationLayer :
+	LayerIcon | LayerDiagram
+;
+LayerIcon:
+	'Icon' '(' (coordinateSystem=CoordinateSpecification ',')? graphics=Graphics ')'
+;
+// TODO modified with respect to the modelica manual (comma and graphics optional)
+LayerDiagram:
+	{LayerDiagram} 'Diagram' '(' coordinateSystem=CoordinateSpecification? (','  graphics=Graphics)? ')'
+;
+CoordinateSpecification:
+	'coordinateSystem' '(' args+=CoordinateSpecificationArgs (',' args+=CoordinateSpecificationArgs)* ')'
+;
+CoordinateSpecificationArgs:
+	Extent | PreserveAR | InitialScale | Grid
+;
+Extent:
+	'extent' '=' '{' p1=Point ',' p2=Point'}'
+;
+PreserveAR:
+	'preserveAspectRatio' '=' value=('true'|'false')
+; 
+InitialScale:
+	'initialScale' '=' value=UNSIGNED_NUMBER
+;
+Grid:
+	'grid' '=' value=Point
+;
+
+Placement:
+	name='Placement' '(' args+=PlacementArg (',' args+=PlacementArg)* ')'
+;
+PlacementArg:
+	Visible | Transformation
+;
+Visible:
+	'visible' '=' value=('true'|'false')
+;
+Transformation:
+	name=('transformation'|'iconTransformation') '(' args+=TransformationArg (',' args+=TransformationArg)* ')'
+;
+TransformationArg:
+	Origin | Extent | Rotation
+;
+Rotation:
+	name='rotation' '=' value=Expression
+;
+
+Origin:
+	'origin' '=' point=Point
+;
+Point:
+	'{' x=num ',' y=num '}'
+;
+num returns ecore::EFloat:
+	UNSIGNED_INTEGER | UNSIGNED_NUMBER
+;
+
+Radius:
+	'radius' '=' {Radius} UNSIGNED_INTEGER | {Radius} UNSIGNED_NUMBER
+;
+Smooth:
+	'smooth' '=' value=SmoothEnum
+;
+Color:
+	('color'|'lineColor'|'fillColor') '=' '{' r=UNSIGNED_INTEGER ',' g=UNSIGNED_INTEGER ',' b=UNSIGNED_INTEGER '}'
+;
+Thickness:
+	'thickness' '=' value=UNSIGNED_NUMBER
+;
+Graphics:
+	'graphics' '=' '{' primitive+=GraphicalPrimitive (',' primitive+=GraphicalPrimitive)* '}'
+;
+GraphicalPrimitive:	
+	Line | Polygon | Rectangle | Ellipse | Text | Bitmap
+;
+Line:		name='Line' '(' args+=GraphicalPrimitiveArgs (',' args+=GraphicalPrimitiveArgs)* ')' ;
+Polygon:	name='Polygon' '(' args+=GraphicalPrimitiveArgs (',' args+=GraphicalPrimitiveArgs)*  ')' ;
+Rectangle:	name='Rectangle' '(' args+=GraphicalPrimitiveArgs (',' args+=GraphicalPrimitiveArgs)*  ')' ;
+Ellipse:	name='Ellipse' '(' args+=GraphicalPrimitiveArgs (',' args+=GraphicalPrimitiveArgs)*  ')' ;
+Text:		name='Text' '(' args+=GraphicalPrimitiveArgs (',' args+=GraphicalPrimitiveArgs)* ')' ;
+Bitmap:		name='Bitmap' '(' args+=GraphicalPrimitiveArgs (',' args+=GraphicalPrimitiveArgs)* ')' ;
+
+GraphicalPrimitiveArgs:
+	Visible | Origin | Extent | Color | Smooth | Thickness | Radius
+	| 'points' '=' '{' points+=Point (',' points+=Point)* '}'
+	| 'textString' '=' str=STRING 
+	| 'fileName' '=' fileName=STRING
+	| 'imageSource' '=' imageSource=STRING 
+	| 'fillPattern' '=' fillPattern=FillPattern
+;
+
+Dialog:
+	name='Dialog' '(' args+=DialogArg (',' args+=DialogArg)* ')'
+;
+DialogArg:
+	Enable | Group | Tab
+;
+Enable:
+	'enable' '=' IDENT '==' value+=ComponentReference ('or' IDENT '==' value+=ComponentReference)*
+;
+Group:
+	'group' '=' value=STRING
+;
+Tab:
+	'tab' '=' value=STRING
+;
+AnnotationDocumentation:
+	'Documentation' '(' 'info' '=' value=STRING ("," "revisions" "=" rev=STRING)? ')'
+;
+
+AnnotationExperiment:
+	{AnnotationExperiment} 'experiment' '(' (options+=ExperimentOption (',' options+=ExperimentOption)* )? ')'
+;
+//(custom+=ParameterCustom ','?)*
+ExperimentOption:
+//	StartTime | StopTime | Interval | Tolerance
+//;
+//StartTime:
+	'StartTime' '=' ('+'|'-') start=UNSIGNED_NUMBER
+//;
+//StopTime:
+	| 'StopTime' '=' ('+'|'-') stop=UNSIGNED_NUMBER
+//;
+//Interval:
+	| 'Interval' '=' step=UNSIGNED_NUMBER
+//;
+//Tolerance:
+	| 'Tolerance' '=' tol=UNSIGNED_NUMBER
+;
+
+// Graphical Properties
+enum LinePattern:
+	none='LinePattern.None' 
+	| solid='LinePattern.Solid' 
+	| dash='LinePattern.Dash' 
+	| dot='LinePattern.Dot' 
+	| dashdot='LinePattern.DashDot'
+	| dashdotdot='LinePattern.DashDotDot'
+;
+enum FillPattern: //TODO add missing values
+	none='FillPattern.None'
+	| solid='FillPattern.Solid' 
+	| horizontal='FillPattern.Horizontal'
+	| vertical='FillPattern.Vertical' 
+;
+enum BorderPattern:
+	none='BorderPattern.None' 
+	| raised='BorderPattern.Raised'
+	| sunken='BorderPattern.Sunken'
+	| engraved='BorderPattern.Engraved'
+;
+enum SmoothEnum:
+	none='Smooth.None' 
+	| bezier='Smooth.Bezier'
+;
+
+
+// Lexer (define lexical structure, Cap.2)
+terminal ML_COMMENT		: '/*' -> '*/';
+terminal SL_COMMENT 	: '//' !('\n'|'\r')* ('\r'? '\n')?;
+
+// TODO lexer significantly different from modelica manual 
+terminal IDENT 	: ('a'..'z'|'A'..'Z'|'_') ('a'..'z'|'A'..'Z'|'_'|'0'..'9')*;
+terminal STRING	: '"' ( '\\' . /* 'b'|'t'|'n'|'f'|'r'|'u'|'"'|"'"|'\\' */ | !('\\'|'"') )* '"'; 
+
+terminal S_ESCAPE: ' '|'\b'|'\t'|'\n'|'\f'|'\r'|'\"'|'\''|'\\';
+//terminal WS			: (' '|'\t'|'\r'|'\n')+;
+
+terminal UNSIGNED_INTEGER returns ecore::EInt: ('0'..'9')+;
+// TODO modelica manual doesn't have - sign
+terminal UNSIGNED_NUMBER returns ecore::EDouble:
+	 ('+'|'-')? UNSIGNED_INTEGER ('.' UNSIGNED_INTEGER?)? (('E'|'e')('+'|'-')? UNSIGNED_INTEGER)?
+;
+terminal ANY_OTHER: .;
